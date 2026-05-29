@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Logística Lourdes - Optimizador</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS para el Mapa -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- HTML2PDF para exportar reportes y hojas de ruta -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; overflow: hidden; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .leaflet-interactive { transition: stroke-dashoffset 0.1s linear; }
+    </style>
+</head>
+<body class="flex flex-col h-screen md:flex-row">
+
+    <!-- Navegación móvil -->
+    <div class="md:hidden flex bg-white border-t border-slate-200 fixed bottom-0 w-full z-[1000] pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button id="tab-list" class="flex-1 py-3 flex flex-col items-center justify-center text-blue-600 font-medium transition-colors">
+            <i data-lucide="list-todo" class="w-5 h-5 mb-1"></i>
+            <span class="text-[10px] uppercase tracking-wider">Entregas</span>
+        </button>
+        <button id="tab-map" class="flex-1 py-3 flex flex-col items-center justify-center text-slate-400 font-medium transition-colors">
+            <i data-lucide="map" class="w-5 h-5 mb-1"></i>
+            <span class="text-[10px] uppercase tracking-wider">Mapa</span>
+        </button>
+    </div>
+
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden pb-[60px] md:pb-0">
+        <!-- Panel Izquierdo -->
+        <section id="panel-list" class="w-full md:w-[450px] lg:w-[480px] bg-white h-full flex flex-col shadow-xl z-[600] md:relative absolute inset-0 transition-transform duration-300">
+            
+            <!-- Encabezado Azul con Logo -->
+            <div class="bg-blue-700 text-white p-4 md:p-5 shadow-md shrink-0">
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex flex-col">
+                        <div class="flex items-center gap-3">
+                            <!-- Logo cargado por el usuario -->
+                            <img src="image_1d699e.png" alt="Electro Lourdes" class="h-10 w-auto bg-white p-1 rounded shadow-sm object-contain">
+                            <h1 class="text-xl font-black tracking-tight">Logística Lourdes</h1>
+                        </div>
+                        <span class="text-[11px] text-blue-200 italic mt-1 ml-14">Te quiero papá, sos mi héroe ♥</span>
+                    </div>
+                    <button id="btn-open-history" class="text-xs bg-blue-800 hover:bg-blue-900 px-3 py-2 rounded-md flex items-center gap-1 transition-colors shadow-sm border border-blue-600 shrink-0">
+                        <i data-lucide="archive" class="w-4 h-4"></i> Historial
+                    </button>
+                </div>
+
+                <div class="bg-blue-800/50 rounded-lg p-3">
+                    <label class="text-[11px] uppercase tracking-wider font-semibold text-blue-200 mb-1 block">Punto de Partida (Depósito)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="start-address" value="Avenida Rivadavia 6131, CABA" class="flex-1 bg-white/10 border border-white/20 text-white rounded px-2 py-1.5 text-sm placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/50">
+                        <button id="btn-update-start" class="bg-white text-blue-700 px-3 py-1.5 rounded text-sm font-bold hover:bg-blue-50 transition-colors">Fijar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulario Expansible -->
+            <form id="delivery-form" class="p-4 border-b border-slate-200 bg-slate-50 shrink-0 relative transition-all">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-sm font-bold text-slate-700">Nueva Entrega</h2>
+                        <button type="button" id="btn-toggle-form" class="text-slate-400 hover:text-blue-600 transition-colors p-1 bg-slate-200/50 rounded" title="Ocultar/Mostrar Formulario">
+                            <i data-lucide="chevron-up" id="toggle-form-icon" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <!-- Selector de Favoritos -->
+                    <div class="flex items-center gap-1">
+                        <select id="fav-selector" class="text-xs border border-slate-300 rounded px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[140px] font-medium">
+                            <option value="">+ Cargar Favorito...</option>
+                        </select>
+                        <button type="button" id="btn-delete-fav" class="text-rose-500 hover:bg-rose-100 p-1.5 rounded hidden transition-colors" title="Eliminar Favorito Seleccionado">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="form-inputs-container" class="space-y-2 overflow-hidden transition-all duration-300">
+                    <input type="text" id="cust-name" placeholder="Nombre del Cliente" required class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    
+                    <div class="relative">
+                        <input type="text" id="cust-address" placeholder="Dirección Exacta (Ej: Santa Fe 1234, CABA)" required autocomplete="off" class="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <!-- Resultados de autocompletado -->
+                        <ul id="autocomplete-results" class="absolute z-[100] w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto hidden mt-1"></ul>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <input type="tel" id="cust-phone" placeholder="Teléfono (Opcional)" class="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <input type="text" id="cust-notes" placeholder="Notas de entrega" class="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    </div>
+                    
+                    <div class="flex gap-2 mt-3">
+                        <button type="button" id="btn-save-fav" class="bg-amber-100 text-amber-700 font-semibold rounded-md py-2 px-3 text-sm hover:bg-amber-200 transition-colors border border-amber-200" title="Guardar como cliente frecuente">
+                            <i data-lucide="star" class="w-4 h-4"></i>
+                        </button>
+                        <button type="submit" class="flex-1 bg-slate-800 text-white font-bold rounded-md py-2 text-sm hover:bg-slate-700 transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="plus-circle" class="w-4 h-4"></i> Agregar a la Lista
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Lista de Entregas -->
+            <div class="flex-1 flex flex-col overflow-hidden bg-slate-50">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white shrink-0 shadow-sm">
+                    <h3 class="font-bold text-slate-800 text-sm flex items-center">
+                        Ruta del Día 
+                        <span id="count-deliveries" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs ml-2 font-bold">0</span>
+                    </h3>
+                    <div class="flex gap-2">
+                        <button id="btn-clear-all" class="text-xs text-rose-500 font-bold hover:bg-rose-50 px-2 py-1.5 rounded transition-colors border border-transparent hover:border-rose-200">Vaciar</button>
+                        <button id="btn-optimize" class="bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold px-3 py-1.5 rounded-md shadow-sm transition-colors flex items-center gap-1 border border-amber-500">
+                            <i data-lucide="zap" class="w-4 h-4"></i> ¡Optimizar!
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Panel de Ruta Optimizada -->
+                <div id="route-stats" class="px-4 py-3 bg-emerald-50 border-b border-emerald-200 hidden flex-col gap-3 shrink-0">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                            <i data-lucide="check-circle-2" class="w-5 h-5"></i> Ruta Calculada
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[10px] text-emerald-600 uppercase font-bold">Total Estimado</div>
+                            <div class="text-lg font-black text-emerald-700" id="total-cost-display">$0</div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <!-- Enviar a Maps -->
+                        <button id="btn-export-maps" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded shadow-sm flex items-center justify-center gap-1 transition-colors">
+                            <i data-lucide="map" class="w-4 h-4"></i> A Maps
+                        </button>
+                        <!-- PDF de Hoja de Ruta Activa -->
+                        <button id="btn-export-current" class="flex-1 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded shadow-sm flex items-center justify-center gap-1 transition-colors">
+                            <i data-lucide="printer" class="w-4 h-4"></i> PDF Ruta
+                        </button>
+                    </div>
+                    <!-- Finalizar Viaje -->
+                    <button id="btn-finish-route" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded shadow-sm flex items-center justify-center gap-2 transition-colors">
+                        <i data-lucide="flag" class="w-4 h-4"></i> Finalizar y Guardar Historial
+                    </button>
+                </div>
+
+                <div id="deliveries-list" class="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar relative">
+                    <div id="empty-state" class="text-center py-10 px-4 mt-4">
+                        <div class="w-16 h-16 bg-white shadow-sm rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                            <i data-lucide="package" class="w-8 h-8 text-slate-300"></i>
+                        </div>
+                        <p class="text-sm font-bold text-slate-600">No hay entregas cargadas</p>
+                        <p class="text-xs text-slate-400 mt-2">Agregá clientes desde el formulario.</p>
+                    </div>
+                    <div id="deliveries-container" class="space-y-3 pb-2"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Panel del Mapa -->
+        <section id="panel-map" class="flex-1 h-full relative hidden md:block z-[1]">
+            <div id="map" class="w-full h-full"></div>
+            <button id="btn-locate" title="Mi Ubicación" class="absolute bottom-6 right-6 bg-white p-3 rounded-full shadow-lg border border-slate-200 z-[500] text-slate-700 hover:text-blue-600 transition-transform transform hover:scale-110">
+                <i data-lucide="crosshair" class="w-6 h-6 pointer-events-none"></i>
+            </button>
+        </section>
+    </main>
+
+    <!-- Modal Custom -->
+    <div id="custom-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[8000] hidden flex-col items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform scale-95 transition-transform" id="modal-content">
+            <div class="p-5">
+                <h3 id="modal-title" class="text-lg font-black text-slate-800 mb-2">Título</h3>
+                <p id="modal-message" class="text-sm text-slate-600 mb-4">Mensaje</p>
+                <input type="text" id="modal-input" class="w-full border border-slate-300 rounded px-3 py-2 text-sm hidden focus:ring-2 focus:ring-blue-500 focus:outline-none mb-4" placeholder="">
+            </div>
+            <div class="bg-slate-50 px-5 py-3 flex justify-end gap-2 border-t border-slate-100">
+                <button id="modal-cancel" class="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 rounded transition-colors">Cancelar</button>
+                <button id="modal-confirm" class="px-4 py-2 text-sm font-bold text-white rounded transition-colors">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Auxiliar -->
+    <div id="toast-container" class="fixed bottom-20 md:bottom-4 left-1/2 transform -translate-x-1/2 z-[6000] flex flex-col items-center space-y-2 pointer-events-none"></div>
+    <div id="loader" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[7000] hidden flex-col items-center justify-center transition-opacity">
+        <div class="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p id="loader-text" class="text-white font-medium mt-4">Procesando...</p>
+    </div>
+
+    <!-- Panel de Historial (Oculto por defecto) -->
+    <div id="history-panel" class="fixed inset-0 bg-white z-[9000] hidden flex-col translate-y-full transition-transform duration-300">
+        <div class="bg-slate-800 text-white p-4 flex justify-between items-center shadow-md">
+            <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="archive"></i> Historial de Viajes</h2>
+            <button id="btn-close-history" class="p-2 hover:bg-slate-700 rounded-full transition-colors"><i data-lucide="x"></i></button>
+        </div>
+        <div class="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+            <p class="text-sm text-slate-600 font-medium">Acá se guardan los recorridos finalizados.</p>
+        </div>
+        <div id="history-list" class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100">
+            <!-- Items de historial -->
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        lucide.createIcons();
+
+        /* --- UI UTILS & MODAL --- */
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            let color = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : type === 'warning' ? 'bg-amber-500' : 'bg-slate-800';
+            toast.className = `${color} text-white px-4 py-2.5 rounded-full shadow-lg text-sm font-bold flex items-center transition-all duration-300 opacity-0 translate-y-4`;
+            toast.innerText = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('opacity-0', 'translate-y-4'), 10);
+            setTimeout(() => { toast.classList.add('opacity-0', 'translate-y-4'); setTimeout(() => toast.remove(), 300); }, 3000);
+        }
+
+        function toggleLoader(show, text = "Cargando...") {
+            const loader = document.getElementById('loader');
+            if (show) {
+                document.getElementById('loader-text').innerText = text;
+                loader.classList.remove('hidden'); loader.classList.add('flex');
+            } else {
+                loader.classList.add('hidden'); loader.classList.remove('flex');
+            }
+        }
+
+        let modalCallback = null;
+        function openModal({ title, message, isDanger = false, withInput = false, placeholder = "", onConfirm }) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            
+            const input = document.getElementById('modal-input');
+            if (withInput) {
+                input.classList.remove('hidden');
+                input.value = '';
+                input.placeholder = placeholder;
+            } else {
+                input.classList.add('hidden');
+            }
+
+            const btnConfirm = document.getElementById('modal-confirm');
+            btnConfirm.className = `px-4 py-2 text-sm font-bold text-white rounded transition-colors ${isDanger ? 'bg-rose-500 hover:bg-rose-600' : 'bg-blue-600 hover:bg-blue-700'}`;
+            
+            modalCallback = onConfirm;
+            const modal = document.getElementById('custom-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => document.getElementById('modal-content').classList.remove('scale-95'), 10);
+            if (withInput) input.focus();
+        }
+
+        function closeModal() {
+            document.getElementById('modal-content').classList.add('scale-95');
+            setTimeout(() => {
+                const modal = document.getElementById('custom-modal');
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                modalCallback = null;
+            }, 150);
+        }
+
+        document.getElementById('modal-cancel').addEventListener('click', closeModal);
+        document.getElementById('modal-confirm').addEventListener('click', () => {
+            if (modalCallback) {
+                const val = document.getElementById('modal-input').value;
+                modalCallback(val);
+            }
+            closeModal();
+        });
+
+        // --- TOGGLE FORMULARIO ---
+        document.getElementById('btn-toggle-form').addEventListener('click', () => {
+            const container = document.getElementById('form-inputs-container');
+            const icon = document.getElementById('toggle-form-icon');
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                icon.setAttribute('data-lucide', 'chevron-up');
+            } else {
+                container.classList.add('hidden');
+                icon.setAttribute('data-lucide', 'chevron-down');
+            }
+            lucide.createIcons();
+        });
+
+        /* --- TABS --- */
+        const tabList = document.getElementById('tab-list');
+        const tabMap = document.getElementById('tab-map');
+        const panelList = document.getElementById('panel-list');
+        const panelMap = document.getElementById('panel-map');
+
+        function switchTab(tab) {
+            if (window.innerWidth >= 768) return;
+            if (tab === 'list') {
+                panelList.classList.remove('-translate-x-full');
+                panelMap.classList.add('hidden'); panelMap.classList.remove('block');
+                tabList.classList.add('text-blue-600'); tabList.classList.remove('text-slate-400');
+                tabMap.classList.remove('text-blue-600'); tabMap.classList.add('text-slate-400');
+            } else {
+                panelList.classList.add('-translate-x-full');
+                panelMap.classList.remove('hidden'); panelMap.classList.add('block');
+                tabMap.classList.add('text-blue-600'); tabMap.classList.remove('text-slate-400');
+                tabList.classList.remove('text-blue-600'); tabList.classList.add('text-slate-400');
+                setTimeout(() => map.invalidateSize(), 100);
+            }
+        }
+        tabList.addEventListener('click', () => switchTab('list'));
+        tabMap.addEventListener('click', () => switchTab('map'));
+
+        /* --- MAPA --- */
+        const map = L.map('map', {zoomControl: false}).setView([-34.6037, -58.3816], 13);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+
+        let startMarker = null;
+        let deliveryMarkers = [];
+        let routeLine = null;
+        let userMarker = null;
+
+        /* --- ESTADO --- */
+        let state = {
+            // Predeterminado: Avenida Rivadavia 6131, CABA
+            startPoint: { address: "Avenida Rivadavia 6131, CABA", lat: -34.6225, lng: -58.4552 },
+            deliveries: [],
+            optimized: false,
+            routeData: null,
+            totalCost: 0
+        };
+
+        // Bases de Datos Locales
+        let favorites = JSON.parse(localStorage.getItem('logilourdes_favs')) || [];
+        let history = JSON.parse(localStorage.getItem('logilourdes_history')) || [];
+
+        /* --- FAVORITOS --- */
+        const favSelect = document.getElementById('fav-selector');
+        const btnDeleteFav = document.getElementById('btn-delete-fav');
+
+        function updateFavDropdown() {
+            favSelect.innerHTML = '<option value="">+ Cargar Favorito...</option>';
+            favorites.forEach((fav, index) => {
+                const opt = document.createElement('option');
+                opt.value = index; opt.text = fav.name;
+                favSelect.appendChild(opt);
+            });
+            btnDeleteFav.classList.add('hidden');
+        }
+        updateFavDropdown();
+
+        favSelect.addEventListener('change', (e) => {
+            const idx = e.target.value;
+            if (idx !== "") {
+                const fav = favorites[idx];
+                document.getElementById('cust-name').value = fav.name || "";
+                document.getElementById('cust-address').value = fav.address || "";
+                document.getElementById('cust-phone').value = fav.phone || "";
+                
+                // Carga la nota guardada o lo deja vacío
+                document.getElementById('cust-notes').value = fav.notes || "";
+                
+                btnDeleteFav.classList.remove('hidden');
+                
+                // Expand form if hidden
+                const container = document.getElementById('form-inputs-container');
+                if (container.classList.contains('hidden')) {
+                    container.classList.remove('hidden');
+                    document.getElementById('toggle-form-icon').setAttribute('data-lucide', 'chevron-up');
+                    lucide.createIcons();
+                }
+            } else {
+                btnDeleteFav.classList.add('hidden');
+            }
+        });
+
+        btnDeleteFav.addEventListener('click', () => {
+            const idx = favSelect.value;
+            if (idx !== "") {
+                openModal({title: "Eliminar Favorito", message: `¿Borrar a ${favorites[idx].name} de favoritos?`, isDanger: true, onConfirm: () => {
+                    favorites.splice(idx, 1);
+                    localStorage.setItem('logilourdes_favs', JSON.stringify(favorites));
+                    updateFavDropdown();
+                    document.getElementById('delivery-form').reset();
+                    showToast("Favorito eliminado", "info");
+                }});
+            }
+        });
+
+        document.getElementById('btn-save-fav').addEventListener('click', () => {
+            const name = document.getElementById('cust-name').value.trim();
+            const address = document.getElementById('cust-address').value.trim();
+            const phone = document.getElementById('cust-phone').value.trim();
+            const notes = document.getElementById('cust-notes').value.trim();
+            
+            if (!name || !address) return showToast("Necesitás nombre y dirección", "warning");
+            
+            favorites.push({ name, address, phone, notes });
+            localStorage.setItem('logilourdes_favs', JSON.stringify(favorites));
+            updateFavDropdown();
+            showToast("Guardado en favoritos ⭐", "success");
+        });
+
+        /* --- GEOCODING (ArcGIS + OSM) --- */
+        async function getFallbackGeocode(address) {
+            try {
+                let query = address;
+                if (!query.toLowerCase().includes('argentina')) query += ', Argentina';
+                
+                // ArcGIS (Más inteligente para calles latinas)
+                const r = await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&SingleLine=${encodeURIComponent(query)}&maxLocations=1`);
+                const d = await r.json();
+                if (d.candidates && d.candidates.length > 0) {
+                    return { lat: d.candidates[0].location.y, lng: d.candidates[0].location.x, displayName: d.candidates[0].address };
+                }
+                
+                // Fallback OSM
+                const r2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=ar`);
+                const d2 = await r2.json();
+                return d2.length > 0 ? { lat: parseFloat(d2[0].lat), lng: parseFloat(d2[0].lon), displayName: d2[0].display_name } : null;
+            } catch(e) { return null; }
+        }
+
+        // Autocompletado Input
+        let typingTimer;
+        const addressInput = document.getElementById('cust-address');
+        const resultsBox = document.getElementById('autocomplete-results');
+
+        addressInput.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            resultsBox.classList.add('hidden');
+            if(addressInput.value.length < 4) return;
+            
+            typingTimer = setTimeout(async () => {
+                try {
+                    const r = await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?f=json&text=${encodeURIComponent(addressInput.value)}&location=${state.startPoint.lng},${state.startPoint.lat}&distance=50000`);
+                    const d = await r.json();
+                    if(d.suggestions && d.suggestions.length > 0) {
+                        resultsBox.innerHTML = '';
+                        d.suggestions.forEach(s => {
+                            const li = document.createElement('li');
+                            li.className = "px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b border-slate-100 text-slate-700";
+                            li.innerText = s.text;
+                            li.addEventListener('click', async () => {
+                                addressInput.value = s.text;
+                                resultsBox.classList.add('hidden');
+                                try {
+                                    const rGeo = await fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&SingleLine=${encodeURIComponent(s.text)}&magicKey=${s.magicKey}&maxLocations=1`);
+                                    const dGeo = await rGeo.json();
+                                    if(dGeo.candidates && dGeo.candidates.length > 0){
+                                        addressInput.dataset.lat = dGeo.candidates[0].location.y;
+                                        addressInput.dataset.lng = dGeo.candidates[0].location.x;
+                                    }
+                                } catch(err){}
+                            });
+                            resultsBox.appendChild(li);
+                        });
+                        resultsBox.classList.remove('hidden');
+                    }
+                } catch(e){}
+            }, 500);
+        });
+
+        document.addEventListener('click', (e) => {
+            if(e.target !== addressInput) resultsBox.classList.add('hidden');
+        });
+
+
+        /* --- ACCIONES PRINCIPALES --- */
+        document.getElementById('btn-update-start').addEventListener('click', async () => {
+            const val = document.getElementById('start-address').value.trim();
+            if (!val) return;
+            toggleLoader(true, "Buscando depósito...");
+            const geo = await getFallbackGeocode(val);
+            if (geo) {
+                state.startPoint = { address: geo.displayName.split(',')[0], lat: geo.lat, lng: geo.lng };
+                state.optimized = false; state.routeData = null;
+                showToast("Depósito actualizado", "success");
+                renderAll();
+            } else {
+                showToast("No se encontró la dirección", "error");
+            }
+            toggleLoader(false);
+        });
+
+        document.getElementById('delivery-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('cust-name').value;
+            const address = document.getElementById('cust-address').value;
+            
+            toggleLoader(true, "Procesando...");
+            let lat, lng, displayName = address;
+
+            if (addressInput.dataset.lat && addressInput.value === address) {
+                lat = parseFloat(addressInput.dataset.lat);
+                lng = parseFloat(addressInput.dataset.lng);
+                delete addressInput.dataset.lat;
+            } else {
+                const geo = await getFallbackGeocode(address);
+                if (geo) { lat = geo.lat; lng = geo.lng; displayName = geo.displayName.split(',')[0]; } 
+                else { toggleLoader(false); return showToast("No se encontró la dirección", "error"); }
+            }
+
+            state.deliveries.push({
+                name, address: displayName, fullAddress: address, lat, lng,
+                phone: document.getElementById('cust-phone').value,
+                notes: document.getElementById('cust-notes').value,
+                status: 'Pendiente'
+            });
+
+            state.optimized = false; state.routeData = null;
+            document.getElementById('delivery-form').reset();
+            favSelect.value = ""; btnDeleteFav.classList.add('hidden');
+            showToast("Agregado a la lista", "success");
+            toggleLoader(false);
+            renderAll();
+        });
+
+
+        /* --- LÓGICA LOGÍSTICA (Matemática + Costos) --- */
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
+
+        // Lógica de Precios: Hasta 5km CABA = $20.000 | >5km CABA = $30.000 | Fuera CABA = $30.000 + $2200/km extra
+        function calculateCost(distanceKm, address) {
+            const isCABA = address.toLowerCase().includes('caba') || address.toLowerCase().includes('capital federal') || address.toLowerCase().includes('ciudad autónoma');
+            if (isCABA) {
+                return distanceKm <= 5 ? 20000 : 30000;
+            } else {
+                const extraKm = Math.max(0, distanceKm - 5);
+                return 30000 + (extraKm * 2200);
+            }
+        }
+
+        document.getElementById('btn-optimize').addEventListener('click', async () => {
+            if (state.deliveries.length === 0) return showToast("Agregá entregas primero", "warning");
+            
+            toggleLoader(true, "Calculando mejor circuito...");
+            
+            setTimeout(async () => {
+                let unvisited = [...state.deliveries];
+                let currentPoint = state.startPoint;
+                let optimalRoute = [];
+                let totalCostSum = 0;
+
+                // 1. Ordenar Matemáticamente (Vecino más cercano) + Calcular Costos
+                while(unvisited.length > 0) {
+                    let closestIdx = 0; let minDist = Infinity;
+                    for(let i=0; i<unvisited.length; i++) {
+                        let d = getDistance(currentPoint.lat, currentPoint.lng, unvisited[i].lat, unvisited[i].lng);
+                        if(d < minDist) { minDist = d; closestIdx = i; }
+                    }
+                    let nextStop = unvisited.splice(closestIdx, 1)[0];
+                    
+                    // Costo desde el depósito (o parada anterior, según criterio. Lo haremos desde la distancia real entre puntos)
+                    nextStop.distance = minDist;
+                    nextStop.cost = calculateCost(minDist, nextStop.fullAddress || nextStop.address);
+                    totalCostSum += nextStop.cost;
+                    
+                    optimalRoute.push(nextStop);
+                    currentPoint = nextStop;
+                }
+                
+                state.deliveries = optimalRoute;
+                state.totalCost = totalCostSum;
+                state.optimized = true;
+
+                // 2. Intentar dibujar calles por API
+                try {
+                    const coords = [`${state.startPoint.lng},${state.startPoint.lat}`, ...state.deliveries.map(d => `${d.lng},${d.lat}`), `${state.startPoint.lng},${state.startPoint.lat}`].join(';');
+                    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?geometries=geojson&overview=full`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    
+                    if (data.code === 'Ok') {
+                        state.routeData = { type: 'osrm', geometry: data.routes[0].geometry };
+                    } else throw new Error();
+                } catch (e) {
+                    // Fallback a línea recta si la API falla
+                    let pts = [[state.startPoint.lat, state.startPoint.lng], ...state.deliveries.map(d => [d.lat, d.lng]), [state.startPoint.lat, state.startPoint.lng]];
+                    state.routeData = { type: 'local', points: pts };
+                }
+                
+                showToast("¡Ruta óptima calculada!", "success");
+                if (window.innerWidth < 768) switchTab('map');
+                
+                toggleLoader(false);
+                renderAll();
+            }, 100);
+        });
+
+        /* --- ACCIONES DE LISTA (Editar, Eliminar) --- */
+        window.deleteDelivery = (idx) => {
+            openModal({ title: "Eliminar", message: "¿Borrar esta entrega?", isDanger: true, onConfirm: () => {
+                state.deliveries.splice(idx, 1);
+                state.optimized = false; state.routeData = null; renderAll();
+            }});
+        };
+
+        window.editDelivery = (idx) => {
+            const d = state.deliveries[idx];
+            document.getElementById('cust-name').value = d.name;
+            document.getElementById('cust-address').value = d.fullAddress || d.address;
+            document.getElementById('cust-phone').value = d.phone || '';
+            document.getElementById('cust-notes').value = d.notes || '';
+            
+            // Expandir form si estaba oculto
+            const container = document.getElementById('form-inputs-container');
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                document.getElementById('toggle-form-icon').setAttribute('data-lucide', 'chevron-up');
+                lucide.createIcons();
+            }
+
+            state.deliveries.splice(idx, 1);
+            state.optimized = false; state.routeData = null;
+            renderAll();
+            document.getElementById('cust-name').focus();
+            showToast("Editando datos...", "info");
+        };
+
+        window.toggleStatus = (idx) => {
+            state.deliveries[idx].status = state.deliveries[idx].status === 'Pendiente' ? 'Entregado' : 'Pendiente';
+            renderAll();
+        };
+
+        document.getElementById('btn-clear-all').addEventListener('click', () => {
+            if (state.deliveries.length > 0) {
+                openModal({title:"Vaciar Lista", message:"¿Seguro que querés borrar todas las entregas?", isDanger: true, onConfirm: () => {
+                    state.deliveries = []; state.optimized = false; state.routeData = null; renderAll();
+                }});
+            }
+        });
+
+        /* --- EXPORTAR A GOOGLE MAPS --- */
+        document.getElementById('btn-export-maps').addEventListener('click', () => {
+            if (state.deliveries.length === 0) return;
+            const baseUrl = "https://www.google.com/maps/dir/?api=1";
+            const origin = `&origin=${state.startPoint.lat},${state.startPoint.lng}`;
+            
+            // Último punto como destino
+            const last = state.deliveries[state.deliveries.length - 1];
+            const destination = `&destination=${last.lat},${last.lng}`;
+            
+            // Puntos intermedios
+            let waypoints = "";
+            if (state.deliveries.length > 1) {
+                const mids = state.deliveries.slice(0, -1).map(d => `${d.lat},${d.lng}`).join('|');
+                waypoints = `&waypoints=${mids}`;
+            }
+            
+            const fullUrl = `${baseUrl}${origin}${destination}${waypoints}&travelmode=driving`;
+            window.open(fullUrl, '_blank');
+        });
+
+        /* --- HISTORIAL Y PDF --- */
+        document.getElementById('btn-finish-route').addEventListener('click', () => {
+            openModal({title: "Finalizar Viaje", message: "¿Guardar este recorrido en el historial y limpiar la pantalla?", onConfirm: () => {
+                const record = {
+                    date: new Date().toLocaleString('es-AR'),
+                    start: state.startPoint.address,
+                    cost: state.totalCost,
+                    items: [...state.deliveries]
+                };
+                history.unshift(record);
+                localStorage.setItem('logilourdes_history', JSON.stringify(history));
+                
+                state.deliveries = []; state.optimized = false; state.routeData = null;
+                showToast("Recorrido archivado", "success");
+                renderAll();
+            }});
+        });
+
+        document.getElementById('btn-export-current').addEventListener('click', () => {
+            if (state.deliveries.length === 0) return showToast("No hay entregas para exportar", "warning");
+            
+            openModal({ 
+                title: "Hoja de Ruta", 
+                message: "Añadí una observación general para esta hoja de ruta (Opcional):", 
+                withInput: true, 
+                placeholder: "Ej: Cuidado con la lluvia...", 
+                onConfirm: (rutaNote) => {
+                    toggleLoader(true, "Generando Hoja de Ruta...");
+                    
+                    const tempDiv = document.createElement('div');
+                    tempDiv.className = "bg-white p-8 w-full";
+                    
+                    let html = `
+                        <div class="mb-6 border-b-4 border-blue-800 pb-4 flex justify-between items-start">
+                            <div>
+                                <h1 class="text-3xl font-black text-blue-900 tracking-tight">LOGÍSTICA LOURDES</h1>
+                                <p class="text-slate-500 font-bold mt-1">HOJA DE RUTA ACTIVA</p>
+                                <p class="text-slate-400 text-sm mt-1">Fecha: ${new Date().toLocaleString('es-AR')}</p>
+                                <p class="text-slate-600 text-sm mt-2 font-bold">Base: ${state.startPoint.address}</p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    if (rutaNote && typeof rutaNote === 'string' && rutaNote.trim() !== '') {
+                        html += `<div class="mb-5 p-3 bg-slate-100 rounded text-slate-800 font-medium italic border border-slate-300"><b>Aviso:</b> ${rutaNote}</div>`;
+                    }
+                    
+                    html += `<div class="space-y-4">`;
+                    state.deliveries.forEach((d, i) => {
+                        html += `
+                            <div class="border-b border-slate-300 pb-3">
+                                <p class="font-black text-slate-800 text-lg">${i+1}. ${d.name}</p>
+                                <p class="text-slate-700 text-sm font-medium">📌 ${d.address}</p>
+                                ${d.phone ? `<p class="text-slate-600 text-sm mt-1">📞 ${d.phone}</p>` : ''}
+                                ${d.notes ? `<p class="text-slate-600 text-sm italic mt-1 bg-slate-50 p-1">Nota: ${d.notes}</p>` : ''}
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                    tempDiv.innerHTML = html;
+                    
+                    html2pdf().set({
+                        margin: 10, filename: `Hoja_Ruta_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                    }).from(tempDiv).save().then(() => {
+                        toggleLoader(false); showToast("Hoja descargada", "success");
+                    });
+                }
+            });
+        });
+
+        // Panel Historial Toggle
+        const histPanel = document.getElementById('history-panel');
+        document.getElementById('btn-open-history').addEventListener('click', () => {
+            renderHistory();
+            histPanel.classList.remove('hidden');
+            setTimeout(() => histPanel.classList.remove('translate-y-full'), 10);
+        });
+        document.getElementById('btn-close-history').addEventListener('click', () => {
+            histPanel.classList.add('translate-y-full');
+            setTimeout(() => histPanel.classList.add('hidden'), 300);
+        });
+
+        function renderHistory() {
+            const container = document.getElementById('history-list');
+            if (history.length === 0) {
+                container.innerHTML = `<p class="text-center text-slate-500 mt-10">No hay viajes guardados.</p>`;
+                return;
+            }
+            
+            container.innerHTML = '';
+            history.forEach((h, idx) => {
+                let html = `
+                    <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200" id="hist-card-${idx}">
+                        <div class="flex justify-between items-start mb-3 border-b border-slate-100 pb-2">
+                            <div>
+                                <p class="text-xs text-slate-400 font-bold">${h.date}</p>
+                                <p class="text-sm font-bold text-slate-800">${h.items.length} Entregas</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-black text-emerald-600 hist-cost">$${h.cost.toLocaleString('es-AR')}</p>
+                                <button onclick="exportHistoryPDF(${idx})" class="text-xs text-blue-600 font-bold hover:underline mt-1"><i data-lucide="printer" class="w-3 h-3 inline"></i> Generar PDF</button>
+                            </div>
+                        </div>
+                        <div class="space-y-1">
+                `;
+                h.items.forEach((item, i) => {
+                    html += `<p class="text-xs text-slate-600"><span class="font-bold">${i+1}.</span> ${item.name} <span class="text-slate-400">(${item.address})</span></p>`;
+                });
+                html += `</div></div>`;
+                container.innerHTML += html;
+            });
+            lucide.createIcons();
+        }
+
+        window.exportHistoryPDF = (idx) => {
+            const h = history[idx];
+            toggleLoader(true, "Creando reporte...");
+            const tempDiv = document.createElement('div');
+            tempDiv.className = "bg-white p-8 w-full";
+            
+            let html = `
+                <div class="mb-6 border-b-2 border-slate-800 pb-4">
+                    <h1 class="text-2xl font-black text-slate-800">LOGÍSTICA LOURDES</h1>
+                    <p class="text-slate-500">Reporte de Recorrido Finalizado</p>
+                    <p class="text-slate-400 text-sm mt-1">Fecha: ${h.date}</p>
+                </div>
+                <div class="space-y-4">
+            `;
+            h.items.forEach((d, i) => {
+                html += `
+                    <div class="border-b border-slate-200 pb-3">
+                        <p class="font-bold text-slate-800">${i+1}. ${d.name}</p>
+                        <p class="text-slate-600 text-sm">${d.address}</p>
+                        ${d.notes ? `<p class="text-slate-500 text-sm italic">Nota: ${d.notes}</p>` : ''}
+                    </div>
+                `;
+            });
+            html += `</div>`;
+            tempDiv.innerHTML = html;
+            
+            html2pdf().set({
+                margin: 10, filename: `Reporte_${h.date.replace(/[\/ :]/g,'-')}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).from(tempDiv).save().then(() => {
+                toggleLoader(false);
+            });
+        };
+
+        /* --- RENDERIZADO VISUAL --- */
+        function renderAll() {
+            // -- LISTA --
+            const listC = document.getElementById('deliveries-container');
+            document.getElementById('count-deliveries').innerText = state.deliveries.length;
+            
+            const stats = document.getElementById('route-stats');
+            if (state.optimized) {
+                stats.classList.remove('hidden'); stats.classList.add('flex');
+                document.getElementById('total-cost-display').innerText = `$${state.totalCost.toLocaleString('es-AR')}`;
+            } else {
+                stats.classList.add('hidden'); stats.classList.remove('flex');
+            }
+
+            if (state.deliveries.length === 0) {
+                listC.innerHTML = '';
+                document.getElementById('empty-state').classList.remove('hidden');
+            } else {
+                document.getElementById('empty-state').classList.add('hidden');
+                listC.innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg flex gap-3 opacity-90 mb-2 shadow-sm">
+                        <div class="mt-1 flex-shrink-0"><div class="w-6 h-6 bg-blue-700 text-white rounded-full flex items-center justify-center text-xs font-bold shadow">D</div></div>
+                        <div><h4 class="font-bold text-blue-900 text-sm">Depósito Central</h4><p class="text-xs text-blue-700 font-medium">${state.startPoint.address}</p></div>
+                    </div>`;
+
+                state.deliveries.forEach((d, i) => {
+                    const isDelivered = d.status === 'Entregado';
+                    listC.innerHTML += `
+                        <div class="bg-white border border-slate-200 p-3 rounded-lg flex gap-3 shadow-sm relative ${isDelivered ? 'opacity-60 bg-slate-50' : 'hover:border-blue-300'} transition-colors">
+                            <div class="mt-1 flex-shrink-0"><div class="w-6 h-6 bg-slate-800 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-sm">${i + 1}</div></div>
+                            <div class="flex-1 pr-10">
+                                <div class="flex justify-between items-start">
+                                    <h4 class="font-bold text-slate-800 text-sm">${d.name}</h4>
+                                    <button onclick="toggleStatus(${i})" class="text-[10px] flex items-center gap-1 font-bold px-2 py-1 rounded border ${isDelivered ? 'text-emerald-700 bg-emerald-100 border-emerald-200' : 'text-amber-700 bg-amber-100 border-amber-200'}">
+                                        <i data-lucide="${isDelivered ? 'check-circle' : 'clock'}" class="w-3 h-3"></i> ${d.status}
+                                    </button>
+                                </div>
+                                <p class="text-xs text-slate-600 mt-1 font-medium">${d.address}</p>
+                                ${d.notes ? `<p class="text-[11px] text-blue-600 mt-1 bg-blue-50 p-1 rounded italic font-medium">${d.notes}</p>` : ''}
+                                
+                                ${state.optimized ? `
+                                <div class="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
+                                    <span class="text-[11px] text-slate-400 font-bold">Dist: ${d.distance.toFixed(1)}km</span>
+                                    <span class="text-sm font-black text-emerald-600">$${d.cost.toLocaleString('es-AR')}</span>
+                                </div>` : ''}
+                            </div>
+                            <div class="absolute top-2 right-2 flex flex-col gap-1">
+                                <button onclick="deleteDelivery(${i})" class="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors" title="Eliminar"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                <button onclick="editDelivery(${i})" class="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>`;
+                });
+            }
+
+            // -- MAPA --
+            if (startMarker) map.removeLayer(startMarker);
+            deliveryMarkers.forEach(m => map.removeLayer(m));
+            deliveryMarkers = [];
+            if (routeLine) map.removeLayer(routeLine);
+
+            const bounds = L.latLngBounds();
+
+            startMarker = L.marker([state.startPoint.lat, state.startPoint.lng], {
+                icon: L.divIcon({ className: '', html: `<div class="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center text-white font-bold border-2 border-white shadow-md z-50">D</div>`, iconSize:[32,32], iconAnchor:[16,16] })
+            }).addTo(map);
+            bounds.extend([state.startPoint.lat, state.startPoint.lng]);
+
+            state.deliveries.forEach((d, i) => {
+                const mk = L.marker([d.lat, d.lng], {
+                    icon: L.divIcon({ className: '', html: `<div class="w-7 h-7 ${d.status==='Entregado'?'bg-emerald-500':'bg-slate-800'} rounded-full flex items-center justify-center text-white font-bold border-2 border-white shadow-md">${i+1}</div>`, iconSize:[28,28], iconAnchor:[14,14] })
+                }).addTo(map).bindPopup(`<b>${d.name}</b><br>${d.address}`);
+                deliveryMarkers.push(mk);
+                bounds.extend([d.lat, d.lng]);
+            });
+
+            if (state.optimized && state.routeData) {
+                if (state.routeData.type === 'osrm') {
+                    routeLine = L.geoJSON(state.routeData.geometry, { style: { color: '#2563eb', weight: 5, opacity: 0.8, dashArray: '2, 10' } }).addTo(map);
+                    let dashOffset = 0;
+                    function animateRoute() {
+                        if (!routeLine || !state.optimized) return;
+                        dashOffset = (dashOffset + 1) % 24; routeLine.setStyle({ dashOffset: -dashOffset });
+                        requestAnimationFrame(animateRoute);
+                    }
+                    animateRoute();
+                } else {
+                    routeLine = L.polyline(state.routeData.points, {color: '#2563eb', weight: 4, dashArray: '5, 10'}).addTo(map);
+                }
+            }
+
+            if (state.deliveries.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
+            else map.setView([state.startPoint.lat, state.startPoint.lng], 13);
+
+            lucide.createIcons();
+        }
+
+        /* --- GPS MIRA --- */
+        document.getElementById('btn-locate').addEventListener('click', () => map.locate({setView: true, maxZoom: 15}));
+        map.on('locationfound', (e) => {
+            if(userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker(e.latlng, { icon: L.divIcon({ html: `<div class="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow"></div>`, className: ''}) }).addTo(map);
+        });
+
+        renderAll();
+    </script>
+</body>
+</html>
