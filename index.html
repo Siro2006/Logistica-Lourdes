@@ -324,7 +324,7 @@
         /* --- MAPA --- */
         const map = L.map('map', {zoomControl: false}).setView([-34.6037, -58.3816], 13);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 
         let startMarker = null;
         let deliveryMarkers = [];
